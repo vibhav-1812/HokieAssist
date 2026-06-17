@@ -431,3 +431,74 @@ async def test_api_get_clubs():
     data = resp.json()
     assert "events" in data
     assert "https://gobblerconnect.vt.edu/" in data["sources"]
+
+
+# ============================================================================
+#  SECTION 7 — INPUT ROBUSTNESS (edge cases for whitespace, case, empty input)
+#
+#  Added on the `fixes` branch as a small extension to the test suite to
+#  cover input-robustness gaps not exercised by sections 1–6. These are
+#  important because both voice transcripts and typed queries arrive with
+#  inconsistent casing and stray whitespace, and the parser/normalizer
+#  must handle them without crashing or returning the wrong intent.
+# ============================================================================
+
+
+# Targeted Test Case - "Voice Query: stray leading/trailing whitespace from a transcript must not change the parsed intent."
+# Type of test - unit
+def test_parse_handles_leading_trailing_whitespace():
+    out = simple_parse("   next bus to Squires   ")
+    assert out["intent"] == "next_bus"
+    assert out["destination"] is not None
+
+
+# Targeted Test Case - "Voice Query: an all-uppercase transcript (common from some speech engines) must still be parsed as a transit intent with a resolved destination."
+# Type of test - unit
+def test_parse_handles_uppercase_query():
+    out = simple_parse("NEXT BUS TO GOODWIN HALL")
+    assert out["intent"] == "next_bus"
+    assert out["destination"] is not None
+
+
+# Targeted Test Case - "General reliability: an empty query must return a well-formed parse dict with generic intent rather than raising."
+# Type of test - unit
+def test_parse_empty_query_is_generic():
+    out = simple_parse("")
+    assert out["intent"] == "generic"
+    assert out["destination"] is None
+    # parse_transit_query must guarantee the same key shape on empty input
+    assert set(out.keys()) >= {"intent", "origin", "destination", "bus_route", "bus_only"}
+
+
+# Targeted Test Case - "Voice Query: place normalization must be case-insensitive so 'GOODWIN HALL' resolves to the same address as 'goodwin hall'."
+# Type of test - unit
+def test_place_normalize_case_insensitive():
+    assert normalize_place("GOODWIN HALL") == normalize_place("goodwin hall")
+
+
+# Targeted Test Case - "Voice Query: place normalization must trim surrounding whitespace before alias lookup so '  goodwin hall  ' still resolves."
+# Type of test - unit
+def test_place_normalize_strips_whitespace():
+    normalized = normalize_place("  goodwin hall  ")
+    # Whether or not aliasing produces the full address, the result must not
+    # carry the original padding — that would break downstream Maps lookups.
+    assert normalized == normalized.strip()
+    assert "goodwin" in normalized.lower() or "Prices Fork" in normalized
+
+
+# Targeted Test Case - "Integration: an uppercase, whitespace-padded dining query sent to POST /ask must still reach the dining scraper and return UDC-sourced content, proving the input-robustness fixes work end-to-end through the API layer."
+# Type of test - integration
+@pytest.mark.asyncio
+async def test_api_ask_dining_robust_input():
+    from httpx import ASGITransport, AsyncClient
+    import main as app_main
+
+    with patch("langchain_agent.get_dining_halls", new_callable=AsyncMock) as mock:
+        mock.return_value = ["D2 — open until 8pm"]
+        transport = ASGITransport(app=app_main.app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/ask", json={"query": "  WHICH DINING HALLS ARE OPEN?  "})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["sources"]
+    assert "https://udc.vt.edu/" in data["sources"]

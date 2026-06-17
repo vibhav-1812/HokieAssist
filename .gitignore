@@ -38,3 +38,4 @@ Thumbs.db
 # IDE (optional; keeps repo clean for course submission)
 .idea/
 .vscode/
+.claude/
