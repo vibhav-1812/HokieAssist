@@ -8,7 +8,10 @@ import os
 import re
 import json
 from typing import Dict, Optional
-
+# PM5 refactor: named constants for intent values
+INTENT_TRANSIT_ROUTE = "transit_route"
+INTENT_NEXT_BUS = "next_bus"
+INTENT_UNKNOWN = "unknown"
 try:
     from openai import OpenAI
     import requests
@@ -133,7 +136,7 @@ def simple_parse(query: str) -> Dict[str, Optional[str]]:
     for pattern in bus_schedule_patterns:
         m = re.search(pattern, q)
         if m:
-            intent = "next_bus"
+            intent = INTENT_NEXT_BUS
             if "orig" in m.groupdict() and m.group("orig"):
                 orig = m.group("orig").strip()
             # Extract bus route if mentioned
@@ -174,7 +177,7 @@ def simple_parse(query: str) -> Dict[str, Optional[str]]:
     for pattern in route_patterns:
         m = re.search(pattern, q)
         if m:
-            intent = "transit_route"
+            intent = INTENT_TRANSIT_ROUTE
             if "dest" in m.groupdict() and m.group("dest"):
                 dest = m.group("dest").strip()
             if "orig" in m.groupdict() and m.group("orig"):
@@ -193,7 +196,7 @@ def simple_parse(query: str) -> Dict[str, Optional[str]]:
         m = re.search(pattern, q)
         if m:
             if intent == "generic":
-                intent = "transit_route"
+                intent = INTENT_TRANSIT_ROUTE
             if "orig" in m.groupdict() and m.group("orig") and not orig:
                 orig = m.group("orig").strip()
             if "dest" in m.groupdict() and m.group("dest") and not dest:
@@ -211,7 +214,7 @@ def simple_parse(query: str) -> Dict[str, Optional[str]]:
         for pattern in next_bus_patterns:
             m = re.search(pattern, q)
             if m:
-                intent = "next_bus"
+                intent = INTENT_NEXT_BUS
                 if "dest" in m.groupdict() and m.group("dest"):
                     dest = m.group("dest").strip()
                 break
@@ -292,7 +295,7 @@ def simple_parse(query: str) -> Dict[str, Optional[str]]:
             full_address = match.group(0)
             if "from" in q[:match.start()]:
                 orig = full_address
-            elif "to" in q[:match.start()] or intent == "transit_route":
+            elif "to" in q[:match.start()] or intent == INTENT_TRANSIT_ROUTE:
                 dest = full_address
     
     # Check if user specifically asked for bus
